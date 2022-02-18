@@ -30,6 +30,7 @@ struct quad_tree {
   quad_node* root;
 };
 
+// png.h structure
 typedef struct image_data image_data;
 struct image_data {
   png_structp png_ptr;
@@ -51,63 +52,56 @@ struct png_pixel {
   png_byte alpha;
 };
 
-//Globals
-png_pixel white = {0,0,0,255};
-png_pixel black = {255,255,255,255};
-
-//Déclarations de fonctions
-void CopyImageSettings(image_data*,image_data);
-void ImageRowAlloc(image_data*,int,int);
+void CopyImageSettings(image_data*, image_data);
+void ImageRowAlloc(image_data*, int, int);
 png_pixel** ImageToMatrix(image_data*);
-void MatrixToImage(image_data*,png_pixel**);
-quad_tree* MatrixToQuad(png_pixel**,int,int);
-png_pixel** QuadToMatrix(quad_tree*,int,int);
-quad_node* RecMatToNode(quad_node*,png_pixel**,int,int);
-void RecNodeToMat(png_pixel**,quad_node*,int,int,int,int);
-png_pixel*** SplitImgIn4(png_pixel** mat,int width,int height);
-void Compress(quad_tree*,float);
-void PruneBranches(quad_node*,float);
-png_pixel PixelAverage(png_pixel*,int);
+void MatrixToImage(image_data*, png_pixel**);
+quad_tree* MatrixToQuad(png_pixel**, int, int);
+png_pixel** QuadToMatrix(quad_tree*, int, int);
+quad_node* RecMatToNode(quad_node*, png_pixel**, int, int);
+void RecNodeToMat(png_pixel**, quad_node*, int, int, int, int);
+png_pixel*** SplitImgIn4(png_pixel** mat, nt width, int height);
+void Compress(quad_tree*, float);
+void PruneBranches(quad_node*, float);
+png_pixel PixelAverage(png_pixel*, int);
 float PixelColorDistance(png_pixel, png_pixel);
-float PixelVariance(png_pixel, png_pixel*,int );
+float PixelVariance(png_pixel, png_pixel*, int );
 void ReadImage(image_data*);
 void WriteImage(image_data);
 quad_tree* qt_alloc(quad_node*);
 void qt_free(quad_tree*);
 quad_node* qn_alloc(void*,quad_node*);
 void qn_free(quad_node*);
-png_pixel** image_alloc(int,int);
+png_pixel** image_alloc(int, int);
 
 ////////////////
 /*    main    */
 ////////////////
-int main(int argc,char* const argv[]){
+int main(int argc, char* const argv[]){
 
-  image_data input_img;
-  
-  //CLI
+  // CLI
   if(argc != 2){
     printf("Usage: program_name <file_in>");
     return 1;
   }
-  
-  memcpy(input_img.file_name,argv[1],strlen(argv[1])+1);
 
-  //Compression parameter
-  //Threshold above which the information can't be compressed
-  //Normalized from 0.0 to 1.0. Common values around 0.00001
+  // Compression parameter
+  // Threshold above which the information can't be compressed
+  // Normalized from 0.0 to 1.0. Common values around 0.001
   float compressionThreshold = 0.0005;
   
-  //Get Image:
+  // Get Image:
+  image_data input_img;
+  memcpy(input_img.file_name,argv[1],strlen(argv[1])+1);
   strcpy(input_img.file_name,argv[1]);
   ReadImage(&input_img);
   
-  //Compression:
+  // Compression:
   png_pixel** in_data = ImageToMatrix(&input_img);
   quad_tree* qt = MatrixToQuad(in_data,input_img.width,input_img.height);
   Compress(qt,compressionThreshold);
 
-  //Write output:
+  // Write output:
   png_pixel** out_data = QuadToMatrix(qt,input_img.width,input_img.height);
   image_data output_img;
   CopyImageSettings(&output_img,input_img);
@@ -118,7 +112,12 @@ int main(int argc,char* const argv[]){
   return 0;
 }
 
-void CopyImageSettings(image_data* out,image_data in){
+/**
+ * Copies the settings of a png image to another one
+ * @param out the image pointer to paste settings to
+ * @param in  the image to get settings from
+ */
+void CopyImageSettings(image_data* out, image_data in){
 
   out -> color_type = in.color_type;
   out -> bit_depth = in.bit_depth;
@@ -128,13 +127,24 @@ void CopyImageSettings(image_data* out,image_data in){
 
 }
 
-void ImageRowAlloc(image_data* out,int row_bytes,int height){
+/**
+ * Allocates memory for the rows of pixels of the image
+ * @param out       pointer to the allocated image
+ * @param row_bytes number of bytes to allocate per row
+ * @param height    number of rows in the image
+ */
+void ImageRowAlloc(image_data* out, int row_bytes, int height){
   out -> row_pointers = (png_bytep*)malloc(sizeof(png_bytep) * height);
   for(int y = 0; y < height; y++) {
     out -> row_pointers[y] = (png_byte*)malloc(row_bytes);
   }
 }
 
+/**
+ * Creates a matrix holding the pixels of the image, a pixel map
+ * @param img the image to get a pixel map of
+ * @return the pixel map matrix
+ */
 png_pixel** ImageToMatrix(image_data* img){
   
   png_pixel** mat = image_alloc(img -> width,img -> height);
@@ -142,6 +152,7 @@ png_pixel** ImageToMatrix(image_data* img){
   for(int y = 0; y < img -> height; y++){
     png_bytep row = (img -> row_pointers)[y];
     for(int x = 0; x < img -> width; x++){
+
       png_bytep pix = &(row[x * 4]);
       png_pixel new_pix;
       new_pix.red = pix[0];
@@ -149,27 +160,42 @@ png_pixel** ImageToMatrix(image_data* img){
       new_pix.blue = pix[2];
       new_pix.alpha = pix[3];
       mat[y][x] = new_pix;
+
     }
   }
 
   return mat;
 }
 
-void MatrixToImage(image_data* img_out,png_pixel** mat){
+/**
+ * Writes a matrix of pixels to an image
+ * @param img_out the image to write to
+ * @param mat     the matrix to get pixels from
+ */
+void MatrixToImage(image_data* img_out, png_pixel** mat){
 
   for(int y = 0; y < img_out -> height; y++){
     png_bytep row = (img_out -> row_pointers)[y];
     for(int x = 0; x < img_out -> width; x++){
+
       png_bytep pix = &(row[x * 4]);
       png_pixel new_pix = mat[y][x];
       pix[0] = new_pix.red;
       pix[1] = new_pix.green;
       pix[2] = new_pix.blue;
       pix[3] = new_pix.alpha;
+
     }
   }
 }
 
+/**
+ * Constructs a quadtree from a matrix 
+ * @param mat    matrix
+ * @param width  width of the matrix
+ * @param height height of the matrix
+ * @return pointer to the quadtree
+ */
 quad_tree* MatrixToQuad(png_pixel** mat,int width,int height){
   quad_tree* qt = qt_alloc(NULL);
   quad_node* root_ = qn_alloc(NULL,NULL);
@@ -178,6 +204,13 @@ quad_tree* MatrixToQuad(png_pixel** mat,int width,int height){
   return qt;
 }
 
+/**
+ * Constructs the matrix corresponding to a quadtree
+ * @param qt      quadtree to convert
+ * @param width   width of the target matrix
+ * @param height  height of the target matrix
+ * @return the matrix
+ */
 png_pixel** QuadToMatrix(quad_tree* qt,int width,int height){
 
   png_pixel** mat = image_alloc(width,height);
@@ -187,7 +220,17 @@ png_pixel** QuadToMatrix(quad_tree* qt,int width,int height){
   return mat;
 }
 
-quad_node* RecMatToNode(quad_node* parent,png_pixel** mat,int width,int height){
+/**
+ * Helper recursion fonction to convert a portion 
+ * of a matrix to a quadtree node
+ * @param parent  parent node of the quadtree node
+ * @param mat     matrix to get pixels from
+ * @param width   width of the remaining sub-matrix to convert
+ * @param height  height of the remaining sub-matrix to convert
+ * @return quadtree node
+ */
+quad_node* RecMatToNode(quad_node* parent, png_pixel** mat, 
+                        int width, int height){
 
   if(width == 0 || height == 0)
     printf("\nWidth or height was not a power of 2.\n");
@@ -195,7 +238,7 @@ quad_node* RecMatToNode(quad_node* parent,png_pixel** mat,int width,int height){
   if(width == 1 && height == 1)
     return qn_alloc(&mat[0][0],parent);
 
-  //Subdivide the image into 2x2 pieces:
+  // Subdivide the image into 2x2 pieces:
   png_pixel*** sub_imgs = SplitImgIn4(mat,width,height);
 
   quad_node* child = qn_alloc(NULL,parent);
@@ -207,15 +250,26 @@ quad_node* RecMatToNode(quad_node* parent,png_pixel** mat,int width,int height){
   return child;
 }
 
-void RecNodeToMat(png_pixel** mat,quad_node* node,int x,int y,int width,int height){
+/**
+ * Helper recursion fonction to convert a portion 
+ * of a matrix to a quadtree node
+ * @param mat     matrix to write pixels to
+ * @param node    current node to read in the recursion
+ * @param x       position (horizontal) of the node
+ * @param y       position (vertical) of the node
+ * @param width   width of the matrix
+ * @param height  height of the matrix
+ */
+void RecNodeToMat(png_pixel** mat, quad_node* node, 
+                  int x,int y,int width,int height){
 
-  //If node is at the pixel level, draw and end recursion.
+  // If node is at the pixel level, draw and end recursion.
   if(width == 1 && height == 1){
     mat[y][x] = *(png_pixel*)(node -> value);
     return;
   }
 
-  //If leaf ends, keep the same color.
+  // If leaf ends, keep the same color.
   if(node -> q1 == NULL && node -> q2 == NULL &&
      node -> q3 == NULL && node -> q4 == NULL){
     node -> q1 = node;
@@ -224,17 +278,29 @@ void RecNodeToMat(png_pixel** mat,quad_node* node,int x,int y,int width,int heig
     node -> q4 = node;
   }
 
-  //Top-left
-  RecNodeToMat(mat,node -> q1,x,y,width/2,height/2);
-  //Top-right
-  RecNodeToMat(mat,node -> q2,x+(width/2),y,width/2,height/2);
-  //Bottom-left
-  RecNodeToMat(mat,node -> q3,x,y+(height/2),width/2,height/2);
-  //Bottom-right
-  RecNodeToMat(mat,node -> q4,x+(width/2),y+(height/2),width/2,height/2);
+  // Top-left
+  RecNodeToMat(mat, node -> q1,
+              x, y, width/2, height/2);
+  // Top-right
+  RecNodeToMat(mat, node -> q2,
+              x + (width/2), y, width/2, height/2);
+  // Bottom-left
+  RecNodeToMat(mat, node -> q3,
+              x, y + (height/2), width/2, height/2);
+  // Bottom-right
+  RecNodeToMat(mat, node -> q4,
+              x + (width/2), y + (height/2), width/2, height/2);
 }
 
-png_pixel*** SplitImgIn4(png_pixel** mat,int width,int height){
+/**
+ * Splits and allocates a pixel matrix in 4 sub-matrices 
+ * along the center.
+ * @param mat    matrix of pixels
+ * @param width  width of the matrix
+ * @param height height of the matrix
+ * @return pointer to the 4 sub-matrices
+ */
+png_pixel*** SplitImgIn4(png_pixel** mat, int width, int height){
 
   png_pixel*** sub_imgs = (png_pixel***) malloc(4*sizeof(png_pixel**));
 
@@ -259,25 +325,38 @@ png_pixel*** SplitImgIn4(png_pixel** mat,int width,int height){
   return sub_imgs;
 }
 
-void Compress(quad_tree* qt,float compressionThreshold){
+/**
+ * Applies compression to a quadtree to branches with similar colors.
+ * @param qt                    the quadtree to compress
+ * @param compressionThreshold  the threshold to compress according to.
+ */
+void Compress(quad_tree* qt, float compressionThreshold){
   PruneBranches(qt -> root,compressionThreshold);
 }
 
-void PruneBranches(quad_node* node,float compressionThreshold){
+/**
+ * Recursively removes branches of a quadtree that have a similar color,
+ * according to a compression threshold.
+ * @param node                 the sub-branch to prune
+ * @param compressionThreshold the threshold to user to compare colors with.
+ */
+void PruneBranches(quad_node* node, float compressionThreshold){
+
   if(node -> q1 != NULL && node -> q2 != NULL &&
      node -> q3 != NULL && node -> q4 != NULL){
 
-    //Compress leaves, then move upwards
+    // Compress leaves, then move upwards
     PruneBranches(node -> q1,compressionThreshold);
     PruneBranches(node -> q2,compressionThreshold);
     PruneBranches(node -> q3,compressionThreshold);
     PruneBranches(node -> q4,compressionThreshold);
 
-    //If a leaf was not compressed, don't compress.
-    if(node -> q1 -> value == NULL || node -> q2 -> value == NULL ||
-       node -> q3 -> value == NULL || node -> q4 -> value == NULL)
+    // If a leaf was not compressed, don't compress.
+    if( node -> q1 -> value == NULL || node -> q2 -> value == NULL ||
+        node -> q3 -> value == NULL || node -> q4 -> value == NULL)
       return;
 
+    // Get pixels
     png_pixel* list_pixels = malloc(sizeof(png_pixel) * 4);
     list_pixels[0] = *((png_pixel*) node -> q1 -> value);
     list_pixels[1] = *((png_pixel*) node -> q2 -> value);
@@ -285,6 +364,7 @@ void PruneBranches(quad_node* node,float compressionThreshold){
     list_pixels[3] = *((png_pixel*) node -> q4 -> value);
 
     png_pixel avg = PixelAverage(list_pixels,4);
+
     //If 4 squares are of similar color, combine them.
     if(PixelVariance(avg,list_pixels,4) < compressionThreshold){
       //Cut the tree
@@ -303,6 +383,12 @@ void PruneBranches(quad_node* node,float compressionThreshold){
   }
 }
 
+/**
+ * Computes the average color of pixels.
+ * @param list_pixels list of pixels to average
+ * @param count       the number of pixels in the list
+ * @return a pixel with the average color
+ */
 png_pixel PixelAverage(png_pixel* list_pixels,int count){
 
   png_pixel avg;
@@ -327,6 +413,12 @@ png_pixel PixelAverage(png_pixel* list_pixels,int count){
   return avg;
 }
 
+/**
+ * Computes the "distance" between two pixels in color space.
+ * @param pix1 first pixel
+ * @param pix2 second pixel
+ * @return distance between pix1 and pix2
+ */
 float PixelColorDistance(png_pixel pix1, png_pixel pix2){
 
   float distance = 0;
@@ -338,10 +430,17 @@ float PixelColorDistance(png_pixel pix1, png_pixel pix2){
 
   float max_distance = pow(2 * 256,2) * 4;
 
-  return distance/max_distance; //Normalized
+  return distance/max_distance; // Normalized
 }
 
-
+/**
+ * Computes the variance of the distance between the pixels.
+ * TODO: internally compute the average rather then take it as an argument.
+ * @param average_pix the average pixel of the list of pixels
+ * @param list_pixels a list of pixels to compute the variance of
+ * @param count number of pixels
+ * @return the variance of the distance between the pixels
+ */
 float PixelVariance(png_pixel average_pix, png_pixel* list_pixels,int count){
 
   float variance = 0;
@@ -354,6 +453,11 @@ float PixelVariance(png_pixel average_pix, png_pixel* list_pixels,int count){
   return variance/((float)count);
 }
 
+/**
+ * Read an image from a <png.h> image_data struct with the filename loaded.
+ * TODO: read only a file name and return the image instead.
+ * @param img pointer to load the data to.
+ */
 void ReadImage(image_data* img){
   
   unsigned char header[8];
@@ -411,6 +515,11 @@ void ReadImage(image_data* img){
   printf("| Interlace level: %d\n",img -> interlace_amount);
 }
 
+/**
+ * Write an image from a <png.h> image_data struct.
+ * TODO: get the output file name from args.
+ * @param img pointer to load the data from.
+ */
 void WriteImage(image_data img){
 
   printf("Writing image...");
@@ -453,6 +562,12 @@ void WriteImage(image_data img){
   printf("File closed.\n");
 }
 
+/**
+ * Allocates a quadtree node and assigns its values.
+ * @param val value to assign to the node
+ * @param par parent node of the node
+ * @return pointer to the quadtree node
+ */
 quad_node* qn_alloc(void* val, quad_node* par){
   quad_node* qn = (quad_node*) malloc(sizeof(quad_node));
   qn -> value = val;
@@ -460,6 +575,10 @@ quad_node* qn_alloc(void* val, quad_node* par){
   return qn;
 }
 
+/**
+ * Frees the allocated memory of a quadtree node.
+ * @param qn the node to free
+ */
 void qn_free(quad_node* qn){
 
   if(qn == NULL)
@@ -475,18 +594,33 @@ void qn_free(quad_node* qn){
   }
 }
 
+/**
+ * Allocates memory for a quadtree pointer.
+ * @param qn the root node to assign as the first node of the quadtree
+ * @return the allocated quadtree pointer
+ */
 quad_tree* qt_alloc(quad_node* qn){
   quad_tree* qt = (quad_tree*)malloc(sizeof(quad_tree)); 
   qt -> root = qn;
   return qt;
 }
 
+/**
+ * Frees the allocated memory of a quadtree
+ * @param qt the quadtree to free
+ */
 void qt_free(quad_tree* qt){
   qn_free(qt -> root);
   free(qt);
   return;
 }
 
+/**
+ * Allocates the memory for a matrix of pixels (pixel map of an image).
+ * @param width  number of rows to allocate
+ * @param height number of columns to allocate
+ * @return the allocated matrix of pixels
+ */
 png_pixel** image_alloc(int width, int height){
 
   png_pixel** mat = (png_pixel**) malloc(height * sizeof(png_pixel*));
